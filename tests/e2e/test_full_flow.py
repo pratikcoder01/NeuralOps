@@ -112,6 +112,8 @@ async def test_full_incident_lifecycle():
         if not incident_id:
             print(" -> [Bypass Fallback] Local model loop offline. Mock-injecting postgres incident...")
             # We mock the creation of the incident in the DB so downstream steps can still run
+            import sys
+            sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../apps/ingestion-service")))
             from src.db.postgres import async_session_maker
             from src.models.incident import Incident
             from src.models.remediation_action import RemediationAction

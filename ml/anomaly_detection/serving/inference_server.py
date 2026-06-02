@@ -18,7 +18,7 @@ import os
 import time
 from typing import List, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field, validator
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
@@ -189,4 +189,4 @@ def health():
 
 @app.get("/metrics")
 def metrics():
-    return generate_latest(), 200, {"Content-Type": CONTENT_TYPE_LATEST}
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

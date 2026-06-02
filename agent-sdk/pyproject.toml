@@ -27,3 +27,7 @@ neuralops-agent = "neuralops_agent.cli:main"
 
 [tool.setuptools]
 packages = ["neuralops_agent", "neuralops_agent.transport", "neuralops_agent.utils"]
+
+[tool.pyrefly]
+ignore-missing-imports = true
+search-path = ["."]
