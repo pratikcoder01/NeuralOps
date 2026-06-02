@@ -72,7 +72,7 @@ class NeuralOpsAgent:
 
         # 3. Flush and send final remaining metrics
         remaining_size = await self.buffer.size()
-        if remaining_size > 0:
+        if remaining_size > 0 and self.transport:
             logger.info(f"Flushing final {remaining_size} metrics from buffer...")
             batch = await self.buffer.flush()
             await self.transport.send(batch)
@@ -97,7 +97,7 @@ class NeuralOpsAgent:
                 await self.buffer.add(metrics)
 
                 # 3. Check and flush if flush threshold hit (flushes immediately in dev, or batches)
-                if await self.buffer.should_flush(threshold=1):
+                if await self.buffer.should_flush(threshold=1) and self.transport:
                     batch = await self.buffer.flush()
                     success = await self.transport.send(batch)
                     if not success:

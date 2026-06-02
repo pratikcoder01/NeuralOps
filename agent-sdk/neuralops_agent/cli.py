@@ -161,7 +161,8 @@ def stop():
     except Exception as e:
         click.echo(f"Failed to stop agent smoothly: {e}. Killing process...")
         try:
-            p.kill()
+            import signal
+            os.kill(active_pid, getattr(signal, "SIGKILL", 9))
         except Exception:
             pass
     finally:
