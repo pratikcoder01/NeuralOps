@@ -1,3 +1,3 @@
-from .model import AnomalyDetector, AutoencoderModel
+from .models import AnomalyDetector, AutoencoderModel, IsolationForest, ZscoreBaseline, EnsembleDetector
 
-__all__ = ["AnomalyDetector", "AutoencoderModel"]
+__all__ = ["AnomalyDetector", "AutoencoderModel", "IsolationForest", "ZscoreBaseline", "EnsembleDetector"]

@@ -1,306 +1,406 @@
 "use client";
-
 import { useState, useEffect } from "react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Zap, Brain, Shield, ArrowRight, CheckCircle, Activity,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-interface AnomalyEvent {
-  id: string;
-  hostname: string;
-  metric: string;
-  value: number;
-  severity: "INFO" | "WARNING" | "CRITICAL";
-  timestamp: string;
-  status: "ACTIVE" | "REMEDIATING" | "RESOLVED";
-}
+const TERMINAL_LINES = [
+  { type: "comment", text: "# NeuralOps Agent — Real-time anomaly detection" },
+  { type: "output", text: "[2026-06-02 09:41:23] Agent v2.4.1 initialized" },
+  { type: "output", text: "[2026-06-02 09:41:53] Batch #4820 received (15 metrics, 60 steps)" },
+  { type: "output", text: "[2026-06-02 09:41:53] Running transformer inference…" },
+  { type: "alert", text: "⚠  ANOMALY DETECTED  score=0.94  host=k8s-node-primary-01" },
+  { type: "output", text: "[2026-06-02 09:41:54] Triggering LLM root-cause analysis…" },
+  { type: "info", text: "→ Cause: CPU spike driven by memory leak in JVM heap" },
+  { type: "output", text: "[2026-06-02 09:41:55] Runbook matched: SCALE_OUT_K8S_NODE" },
+  { type: "success", text: "✓ Remediation approved & executed in 3.2s" },
+  { type: "success", text: "✓ Incident auto-resolved  MTTR=47s  (baseline: 38min)" },
+];
 
-interface RemediationLog {
-  id: string;
-  action: string;
-  target: string;
-  status: "IN_PROGRESS" | "SUCCESS" | "FAILED";
-  duration: string;
-  timestamp: string;
-}
+const TEXT_COLORS: Record<string, string> = {
+  comment: "text-zinc-500",
+  output: "text-zinc-300",
+  alert: "text-red-400 font-bold",
+  info: "text-blue-400",
+  success: "text-green-400",
+};
 
-export default function Dashboard() {
-  const [ingestionRate, setIngestionRate] = useState(420);
-  const [activeAnomalies, setActiveAnomalies] = useState<AnomalyEvent[]>([
-    {
-      id: "anom-101",
-      hostname: "k8s-node-primary-01",
-      metric: "cpu_utilization",
-      value: 94.6,
-      severity: "CRITICAL",
-      timestamp: "Just Now",
-      status: "ACTIVE"
-    },
-    {
-      id: "anom-102",
-      hostname: "db-master-us-east",
-      metric: "disk_space_exhaustion",
-      value: 89.2,
-      severity: "WARNING",
-      timestamp: "5 mins ago",
-      status: "ACTIVE"
-    }
-  ]);
+const COUNTERS = [
+  { label: "Incidents Auto-Resolved", value: 28_492, suffix: "" },
+  { label: "Avg MTTR Reduction", value: 94, suffix: "%" },
+  { label: "Engineering Hours Saved", value: 18_700, suffix: "h" },
+];
 
-  const [remediations, setRemediations] = useState<RemediationLog[]>([
-    {
-      id: "rem-901",
-      action: "restart_systemd_service",
-      target: "neuralops-alerting",
-      status: "SUCCESS",
-      duration: "2.05s",
-      timestamp: "10 mins ago"
-    },
-    {
-      id: "rem-902",
-      action: "purge_docker_logs",
-      target: "staging-api-gateway",
-      status: "SUCCESS",
-      duration: "3.11s",
-      timestamp: "1 hour ago"
-    }
-  ]);
+const FEATURES = [
+  {
+    icon: Activity,
+    title: "Detect",
+    subtitle: "Transformer ML — 15D multivariate time-series",
+    description:
+      "Our autoencoder-based transformer analyses 60-step windows of 15 infrastructure metrics to catch anomalies 38× faster than threshold-based alerting.",
+    color: "text-red-400 bg-red-500/10 border-red-500/20",
+  },
+  {
+    icon: Brain,
+    title: "Explain",
+    subtitle: "GPT-4o root-cause analysis",
+    description:
+      "Every anomaly is instantly explained in plain English. Feature importance scores show exactly which metrics triggered the alert and why.",
+    color: "text-violet-400 bg-violet-500/10 border-violet-500/20",
+  },
+  {
+    icon: Shield,
+    title: "Remediate",
+    subtitle: "Automated runbook execution",
+    description:
+      "Matched runbooks execute automatically (or with one-click approval). Scale out nodes, restart services, purge logs — resolved before users notice.",
+    color: "text-green-400 bg-green-500/10 border-green-500/20",
+  },
+];
 
-  // Simulate real-time metric streams
+const PRICING = [
+  {
+    name: "Starter",
+    price: 299,
+    period: "mo",
+    features: [
+      "Up to 50 hosts",
+      "ML anomaly detection",
+      "LLM explanations",
+      "Slack & email notifications",
+      "7-day metric history",
+      "3 team members",
+    ],
+    cta: "Start Free Trial",
+    popular: false,
+  },
+  {
+    name: "Growth",
+    price: 999,
+    period: "mo",
+    features: [
+      "Up to 500 hosts",
+      "Auto-remediation actions",
+      "Custom runbooks",
+      "PagerDuty integration",
+      "90-day metric history",
+      "Unlimited team members",
+      "Priority support",
+    ],
+    cta: "Start Free Trial",
+    popular: true,
+  },
+  {
+    name: "Enterprise",
+    price: null,
+    period: "",
+    features: [
+      "Unlimited hosts",
+      "Custom ML model training",
+      "On-prem deployment",
+      "SOC 2 Type II",
+      "Unlimited history",
+      "SLA guarantees",
+      "Dedicated CSM",
+    ],
+    cta: "Contact Sales",
+    popular: false,
+  },
+];
+
+function AnimatedCounter({ target, suffix }: { target: number; suffix: string }) {
+  const [count, setCount] = useState(0);
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Fluctuate ingestion rate
-      setIngestionRate(prev => Math.floor(prev + (Math.random() * 30 - 15)));
-    }, 1500);
-    return () => clearInterval(interval);
-  }, []);
-
-  const triggerMockIngestion = () => {
-    // Inject a new metric
-    const hostnames = ["k8s-node-worker-02", "staging-api-gateway", "k8s-node-primary-01", "db-master-us-east"];
-    const metrics = ["memory_leak_detected", "cpu_utilization", "network_rx_dropped", "disk_space_exhaustion"];
-    
-    const host = hostnames[Math.floor(Math.random() * hostnames.length)];
-    const metric = metrics[Math.floor(Math.random() * metrics.length)];
-    const val = Math.round((Math.random() * 50 + 50) * 10) / 10;
-    
-    const isAnomaly = val > 85;
-    if (isAnomaly) {
-      const newAnom: AnomalyEvent = {
-        id: `anom-${Date.now().toString().slice(-4)}`,
-        hostname: host,
-        metric: metric,
-        value: val,
-        severity: val > 92 ? "CRITICAL" : "WARNING",
-        timestamp: "Just Now",
-        status: "ACTIVE"
-      };
-      setActiveAnomalies(prev => [newAnom, ...prev.slice(0, 4)]);
-    }
-  };
-
-  const triggerRemediation = (anomalyId: string, action: string, target: string) => {
-    // Mark anomaly as remediating
-    setActiveAnomalies(prev =>
-      prev.map(anom => (anom.id === anomalyId ? { ...anom, status: "REMEDIATING" } : anom))
-    );
-
-    const newRemId = `rem-${Date.now().toString().slice(-4)}`;
-    
-    // Add remediation logs in progress
-    const newRem: RemediationLog = {
-      id: newRemId,
-      action: action,
-      target: target,
-      status: "IN_PROGRESS",
-      duration: "Processing...",
-      timestamp: "Just Now"
-    };
-    
-    setRemediations(prev => [newRem, ...prev]);
-
-    // Simulate completion
-    setTimeout(() => {
-      // Complete remediation log
-      setRemediations(prev =>
-        prev.map(rem =>
-          rem.id === newRemId
-            ? { ...rem, status: "SUCCESS", duration: `${(Math.random() * 2 + 1).toFixed(2)}s` }
-            : rem
-        )
-      );
-
-      // Resolve the anomaly
-      setActiveAnomalies(prev => prev.filter(anom => anom.id !== anomalyId));
-    }, 3000);
-  };
+    const duration = 2000;
+    const steps = 60;
+    const increment = target / steps;
+    let current = 0;
+    const timer = setInterval(() => {
+      current += increment;
+      if (current >= target) {
+        setCount(target);
+        clearInterval(timer);
+      } else {
+        setCount(Math.floor(current));
+      }
+    }, duration / steps);
+    return () => clearInterval(timer);
+  }, [target]);
 
   return (
-    <div style={{ padding: "40px max(5vw, 24px)", maxWidth: "1600px", margin: "0 auto" }}>
-      {/* Top Banner Navigation */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "48px", flexWrap: "wrap", gap: "16px" }}>
-        <div>
-          <h1 style={{ fontSize: "2.5rem", fontWeight: "800", background: "linear-gradient(135deg, #fff 30%, #a78bfa 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: "-0.03em", marginBottom: "8px" }}>
-            NeuralOps Control Center
-          </h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem" }}>
-            AI-driven cloud infrastructure anomaly telemetry & automated remediation
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-color)", padding: "10px 20px", borderRadius: "30px" }}>
-          <span className="pulse-dot"></span>
-          <span style={{ fontSize: "0.9rem", fontWeight: "600", letterSpacing: "0.05em", color: "var(--success)" }}>
-            ENGINE ONLINE & SHIELDED
-          </span>
-        </div>
-      </header>
+    <span className="tabular-nums">
+      {count.toLocaleString()}{suffix}
+    </span>
+  );
+}
 
-      {/* Grid Summary Statistics */}
-      <section className="dashboard-grid">
-        <div className="glass-card">
-          <div style={{ color: "var(--text-secondary)", fontSize: "0.95rem", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
-            Metric Ingestion Rate
-          </div>
-          <div style={{ fontSize: "2.2rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "baseline", gap: "8px" }}>
-            {ingestionRate} <span style={{ fontSize: "1.1rem", color: "var(--cyan)", fontWeight: "500" }}>metrics/sec</span>
-          </div>
-          <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "12px" }}>
-            Connected to Kafka topic <code style={{ color: "var(--cyan)", fontFamily: "var(--font-mono)" }}>raw.metrics</code>
-          </div>
-        </div>
+function TerminalDemo() {
+  const [visibleLines, setVisibleLines] = useState(0);
 
-        <div className="glass-card">
-          <div style={{ color: "var(--text-secondary)", fontSize: "0.95rem", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
-            ML Detection Accuracy
-          </div>
-          <div style={{ fontSize: "2.2rem", fontWeight: "800", color: "#fff", display: "flex", alignItems: "baseline", gap: "8px" }}>
-            99.24% <span style={{ fontSize: "1.1rem", color: "var(--primary)", fontWeight: "500" }}>confidence</span>
-          </div>
-          <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "12px" }}>
-            Model version: <span style={{ color: "var(--primary)" }}>anomaly_detection_v4.2</span>
-          </div>
-        </div>
+  useEffect(() => {
+    if (visibleLines >= TERMINAL_LINES.length) return;
+    const t = setTimeout(() => setVisibleLines((v) => v + 1), 600);
+    return () => clearTimeout(t);
+  }, [visibleLines]);
 
-        <div className="glass-card">
-          <div style={{ color: "var(--text-secondary)", fontSize: "0.95rem", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
-            Active System Anomalies
-          </div>
-          <div style={{ fontSize: "2.2rem", fontWeight: "800", color: activeAnomalies.length > 0 ? "var(--danger)" : "var(--success)" }}>
-            {activeAnomalies.length}
-          </div>
-          <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "12px" }}>
-            Real-time event analysis in pipeline
-          </div>
-        </div>
+  return (
+    <div className="rounded-xl border border-border bg-black/60 overflow-hidden shadow-2xl shadow-black/50">
+      {/* Window bar */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-zinc-900/60">
+        <div className="h-3 w-3 rounded-full bg-red-500/80" />
+        <div className="h-3 w-3 rounded-full bg-yellow-500/80" />
+        <div className="h-3 w-3 rounded-full bg-green-500/80" />
+        <span className="ml-3 text-xs text-muted-foreground font-mono">neuralops-agent — k8s-node-primary-01</span>
+      </div>
+      {/* Terminal output */}
+      <div className="p-5 font-mono text-sm space-y-1.5 min-h-[240px]">
+        <AnimatePresence>
+          {TERMINAL_LINES.slice(0, visibleLines).map((line, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.2 }}
+              className={TEXT_COLORS[line.type]}
+            >
+              {line.text}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        {visibleLines < TERMINAL_LINES.length && (
+          <span className="inline-block h-4 w-2 bg-zinc-400 animate-pulse" />
+        )}
+      </div>
+    </div>
+  );
+}
 
-        <div className="glass-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ color: "var(--text-secondary)", fontSize: "0.95rem", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
-              Simulator Tools
+export default function LandingPage() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      {/* ─── Navbar ─── */}
+      <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
+              <Zap className="h-4 w-4 text-primary" />
             </div>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "12px" }}>
-              Simulate metric ingestion to generate load and test detectors.
-            </p>
+            <span className="font-bold text-lg">NeuralOps</span>
           </div>
-          <button className="btn btn-primary" onClick={triggerMockIngestion}>
-            Inject Telemetry Log
-          </button>
+          <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
+            <a href="#features" className="hover:text-foreground transition-colors">Features</a>
+            <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="#demo" className="hover:text-foreground transition-colors">Demo</a>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link href="/login">
+              <Button variant="ghost" size="sm">Sign in</Button>
+            </Link>
+            <Link href="/register">
+              <Button size="sm">Start Free Trial</Button>
+            </Link>
+          </div>
+        </div>
+      </nav>
+
+      {/* ─── Hero ─── */}
+      <section className="relative overflow-hidden pt-24 pb-20 px-6">
+        {/* Background glow */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 left-1/2 -translate-x-1/2 h-96 w-96 rounded-full bg-primary/5 blur-3xl" />
+          <div className="absolute top-20 right-1/4 h-64 w-64 rounded-full bg-violet-500/5 blur-3xl" />
+        </div>
+
+        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-primary mb-6">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              Now in production at 200+ SRE teams
+            </div>
+            <h1 className="text-4xl lg:text-6xl font-extrabold tracking-tight leading-[1.05] mb-6">
+              Stop firefighting.<br />
+              <span className="gradient-text">Start preventing.</span>
+            </h1>
+            <p className="text-lg text-muted-foreground mb-8 leading-relaxed max-w-xl">
+              NeuralOps uses transformer-based ML to detect infrastructure anomalies 38× faster,
+              explain root causes with GPT-4o, and auto-remediate — all before your on-call engineer
+              even sees a page.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Link href="/register">
+                <Button size="xl" className="w-full sm:w-auto gap-2">
+                  Start Free Trial <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/dashboard">
+                <Button size="xl" variant="outline" className="w-full sm:w-auto">
+                  View Live Demo
+                </Button>
+              </Link>
+            </div>
+            <div className="flex items-center gap-4 mt-6 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5 text-green-400" /> No credit card</span>
+              <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5 text-green-400" /> 14-day free trial</span>
+              <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5 text-green-400" /> Cancel anytime</span>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            id="demo"
+          >
+            <TerminalDemo />
+          </motion.div>
         </div>
       </section>
 
-      {/* Main Grid Panels */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))", gap: "32px" }}>
-        
-        {/* Active Anomalies stream panel */}
-        <div className="glass-card" style={{ minHeight: "450px" }}>
-          <h2 style={{ fontSize: "1.4rem", fontWeight: "700", marginBottom: "24px", color: "#fff", borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: "12px" }}>
-            🚨 Active Anomaly Detection Queue
-          </h2>
-          {activeAnomalies.length === 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "300px", color: "var(--text-secondary)" }}>
-              <span style={{ fontSize: "3rem", marginBottom: "16px" }}>✓</span>
-              <p style={{ fontWeight: "600" }}>All services operating securely</p>
-              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>No anomalies detected in the last 15 minutes.</p>
+      {/* ─── Live stats ─── */}
+      <section className="border-y border-border bg-card/50 py-12 px-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-3 gap-8 text-center">
+          {COUNTERS.map((c) => (
+            <div key={c.label}>
+              <div className="text-3xl font-extrabold font-mono gradient-text mb-1">
+                <AnimatedCounter target={c.value} suffix={c.suffix} />
+              </div>
+              <p className="text-sm text-muted-foreground">{c.label}</p>
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              {activeAnomalies.map((anom) => (
-                <div key={anom.id} style={{ background: "rgba(255, 255, 255, 0.02)", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "12px", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", transition: "all 0.2s ease" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                      <span style={{ fontSize: "0.75rem", background: anom.severity === "CRITICAL" ? "rgba(239, 68, 68, 0.15)" : "rgba(245, 158, 11, 0.15)", color: anom.severity === "CRITICAL" ? "var(--danger)" : "var(--warning)", border: "1px solid", borderColor: anom.severity === "CRITICAL" ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
-                        {anom.severity}
-                      </span>
-                      <strong style={{ color: "#fff", fontSize: "0.95rem" }}>{anom.hostname}</strong>
-                    </div>
-                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                      Metric <code style={{ color: "var(--cyan)", fontFamily: "var(--font-mono)" }}>{anom.metric}</code> hit threshold with value <strong style={{ color: "#fff" }}>{anom.value}</strong>
-                    </p>
-                    <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Detected {anom.timestamp}</span>
-                  </div>
-                  <div>
-                    {anom.status === "ACTIVE" ? (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: "0.8rem", padding: "8px 16px" }}
-                        onClick={() => triggerRemediation(
-                          anom.id,
-                          anom.metric === "cpu_utilization" ? "scale_out_deployment" : "purge_docker_logs",
-                          anom.hostname
-                        )}
-                      >
-                        Auto Remediation
-                      </button>
-                    ) : (
-                      <span style={{ fontSize: "0.85rem", color: "var(--primary)", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span className="pulse-dot" style={{ backgroundColor: "var(--primary)", boxShadow: "0 0 10px var(--primary)" }}></span>
-                        Remediating...
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
+      </section>
 
-        {/* Remediation Audit Logs Panel */}
-        <div className="glass-card" style={{ minHeight: "450px" }}>
-          <h2 style={{ fontSize: "1.4rem", fontWeight: "700", marginBottom: "24px", color: "#fff", borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: "12px" }}>
-            🛠️ Remediation Activity Log (Celery Pipeline)
-          </h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {remediations.map((rem) => (
-              <div key={rem.id} style={{ background: "rgba(255, 255, 255, 0.02)", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "12px", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                    <code style={{ fontSize: "0.85rem", color: "var(--primary)", fontWeight: "600", fontFamily: "var(--font-mono)" }}>
-                      {rem.action}
-                    </code>
-                    <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>→</span>
-                    <span style={{ color: "#fff", fontSize: "0.85rem", fontWeight: "600" }}>{rem.target}</span>
-                  </div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                    Execution: <span style={{ color: "var(--text-secondary)" }}>{rem.duration}</span> | {rem.timestamp}
-                  </div>
+      {/* ─── Features ─── */}
+      <section id="features" className="py-24 px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold mb-4">Three steps. Zero paging.</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              NeuralOps closes the loop from detection to resolution — automatically.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {FEATURES.map((f, i) => (
+              <motion.div
+                key={f.title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="rounded-xl border border-border bg-card p-6 hover:border-primary/30 transition-colors"
+              >
+                <div className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${f.color} mb-4`}>
+                  <f.icon className="h-5 w-5" />
                 </div>
-                <div>
-                  <span style={{
-                    fontSize: "0.8rem",
-                    padding: "4px 10px",
-                    borderRadius: "6px",
-                    fontWeight: "600",
-                    background: rem.status === "SUCCESS" ? "rgba(16, 185, 129, 0.12)" : rem.status === "IN_PROGRESS" ? "rgba(139, 92, 246, 0.12)" : "rgba(239, 68, 68, 0.12)",
-                    color: rem.status === "SUCCESS" ? "var(--success)" : rem.status === "IN_PROGRESS" ? "var(--primary)" : "var(--danger)",
-                    border: "1px solid",
-                    borderColor: rem.status === "SUCCESS" ? "rgba(16, 185, 129, 0.3)" : rem.status === "IN_PROGRESS" ? "rgba(139, 92, 246, 0.3)" : "rgba(239, 68, 68, 0.3)"
-                  }}>
-                    {rem.status}
-                  </span>
+                <div className="text-xs text-muted-foreground font-mono mb-1">{`0${i + 1}`}</div>
+                <h3 className="text-lg font-bold mb-2">{f.title}</h3>
+                <p className="text-xs text-primary mb-3">{f.subtitle}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Pricing ─── */}
+      <section id="pricing" className="py-24 px-6 border-t border-border">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold mb-4">Simple, predictable pricing</h2>
+            <p className="text-muted-foreground">Save 20% with annual billing</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {PRICING.map((plan) => (
+              <div
+                key={plan.name}
+                className={`relative rounded-xl border p-6 flex flex-col ${
+                  plan.popular
+                    ? "border-primary/50 bg-primary/5 glow-blue"
+                    : "border-border bg-card"
+                }`}
+              >
+                {plan.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className="text-xs px-3 py-1 rounded-full bg-primary text-white font-semibold">
+                      Most Popular
+                    </span>
+                  </div>
+                )}
+                <h3 className="font-bold text-lg mb-2">{plan.name}</h3>
+                <div className="mb-6">
+                  {plan.price ? (
+                    <div>
+                      <span className="text-4xl font-extrabold font-mono">${plan.price}</span>
+                      <span className="text-muted-foreground">/{plan.period}</span>
+                    </div>
+                  ) : (
+                    <div className="text-2xl font-bold">Custom</div>
+                  )}
                 </div>
+                <ul className="space-y-2 mb-8 flex-1">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <CheckCircle className="h-4 w-4 text-green-400 flex-shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Link href={plan.price ? "/register" : "mailto:sales@neuralops.ai"}>
+                  <Button
+                    className="w-full"
+                    variant={plan.popular ? "default" : "outline"}
+                  >
+                    {plan.cta}
+                  </Button>
+                </Link>
               </div>
             ))}
           </div>
         </div>
-
       </section>
+
+      {/* ─── CTA ─── */}
+      <section className="py-24 px-6 text-center border-t border-border">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+        >
+          <h2 className="text-3xl font-bold mb-4">Ready to stop firefighting?</h2>
+          <p className="text-muted-foreground mb-8 max-w-md mx-auto">
+            Join 200+ SRE teams who have reduced their MTTR by 94% with NeuralOps.
+          </p>
+          <Link href="/register">
+            <Button size="xl" className="gap-2">
+              Start Your Free Trial <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        </motion.div>
+      </section>
+
+      {/* ─── Footer ─── */}
+      <footer className="border-t border-border py-8 px-6">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" />
+            <span className="font-semibold text-foreground">NeuralOps</span>
+            <span>© 2026</span>
+          </div>
+          <div className="flex gap-6">
+            <a href="#" className="hover:text-foreground transition-colors">Privacy</a>
+            <a href="#" className="hover:text-foreground transition-colors">Terms</a>
+            <a href="#" className="hover:text-foreground transition-colors">Docs</a>
+            <a href="#" className="hover:text-foreground transition-colors">Status</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -1,0 +1,8 @@
+# Root-level Pyrefly configuration for NeuralOps monorepo
+# This covers files outside any service-specific scope (e.g. scripts/).
+# Third-party packages (pymongo, redis, psycopg2) are expected to be installed
+# in a virtual environment; missing-import errors are suppressed as false positives.
+
+[pyrefly]
+ignore_missing_imports = true
+project_excludes = ["**/node_modules/**", "**/__pycache__/**", "**/dist/**", "**/build/**"]

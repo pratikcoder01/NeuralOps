@@ -94,7 +94,7 @@ def upgrade() -> None:
 
     # 5. Create Remediation Actions Table
     op.create_table(
-        'reremediation_actions',
+        'remediation_actions',
         sa.Column('id', sa.UUID(), nullable=False),
         sa.Column('incident_id', sa.UUID(), nullable=False),
         sa.Column('workspace_id', sa.UUID(), nullable=False),
@@ -113,9 +113,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['workspace_id'], ['workspaces.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_remediation_actions_approved_by'), 'reremediation_actions', ['approved_by'], unique=False)
-    op.create_index(op.f('ix_remediation_actions_incident_id'), 'reremediation_actions', ['incident_id'], unique=False)
-    op.create_index(op.f('ix_remediation_actions_workspace_id'), 'reremediation_actions', ['workspace_id'], unique=False)
+    op.create_index(op.f('ix_remediation_actions_approved_by'), 'remediation_actions', ['approved_by'], unique=False)
+    op.create_index(op.f('ix_remediation_actions_incident_id'), 'remediation_actions', ['incident_id'], unique=False)
+    op.create_index(op.f('ix_remediation_actions_workspace_id'), 'remediation_actions', ['workspace_id'], unique=False)
 
     # 6. Create Audit Log Table
     op.create_table(
@@ -139,7 +139,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table('audit_log')
-    op.drop_table('reremediation_actions')
+    op.drop_table('remediation_actions')
     op.drop_table('incidents')
     op.drop_table('hosts')
     op.drop_table('users')

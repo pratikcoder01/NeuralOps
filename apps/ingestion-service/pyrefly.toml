@@ -1,0 +1,11 @@
+# Pyrefly configuration for NeuralOps ingestion-service
+# Alembic migration scripts (alembic/) use a special execution context where:
+#   - The ingestion-service root is added to sys.path by Alembic at runtime
+#   - Third-party packages are installed in the project venv, not system Python
+# Excluding alembic/ avoids false-positive import errors on internal project
+# modules (src.config, src.models.*) that Pyrefly cannot resolve statically.
+
+[pyrefly]
+python_interpreter = ".venv/Scripts/python.exe"
+ignore_missing_imports = true
+project_excludes = ["alembic/**", "tests/**", "**/__pycache__/**"]
