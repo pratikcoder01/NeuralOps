@@ -4,26 +4,36 @@ on:
   push:
     branches: [ main ]
 
-env:
-  AWS_CONFIGURED: ${{ secrets.AWS_ACCESS_KEY_ID != '' && 'true' || 'false' }}
-
 jobs:
+  # Gate job: surfaces secrets via step output so deploy job
+  # can read it through the `needs` context (allowed in job if:).
+  check-aws:
+    name: Check AWS Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      has_aws: ${{ steps.detect.outputs.has_aws }}
+    steps:
+      - name: Detect AWS secrets
+        id: detect
+        run: |
+          if [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "has_aws=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_aws=false" >> $GITHUB_OUTPUT
+            echo "::notice::AWS credentials not configured — staging deploy skipped."
+          fi
+
   deploy:
     name: Deploy to Staging Cluster
     runs-on: ubuntu-latest
+    needs: [check-aws]
+    if: needs.check-aws.outputs.has_aws == 'true'
     environment: staging
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Skip if AWS secrets not configured
-        if: env.AWS_CONFIGURED != 'true'
-        run: |
-          echo "::notice::AWS secrets not configured — skipping staging deployment."
-          echo "To enable: add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY to repository secrets."
-
       - name: Configure AWS Credentials
-        if: env.AWS_CONFIGURED == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -31,18 +41,15 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
       - name: Update Kubeconfig for Staging EKS
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           aws eks update-kubeconfig --name neuralops-staging-cluster --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
       - name: Install Helm
-        if: env.AWS_CONFIGURED == 'true'
         uses: azure/setup-helm@v4
         with:
           version: 'v3.12.0'
 
       - name: Helm Upgrade and Deploy
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           helm upgrade --install neuralops ./infra/k8s/helm/neuralops \
             --namespace neuralops-staging --create-namespace \
@@ -53,7 +60,6 @@ jobs:
             --set mlInference.image.tag=${{ github.sha }}
 
       - name: Wait for Rollout Completion
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           kubectl rollout status deployment/ingestion-service -n neuralops-staging --timeout=300s
           kubectl rollout status deployment/alerting-service -n neuralops-staging --timeout=300s
@@ -61,7 +67,6 @@ jobs:
           kubectl rollout status deployment/ml-inference -n neuralops-staging --timeout=300s
 
       - name: Run Smoke Tests
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           echo "Running API smoke verification test..."
           curl -f --retry 5 --retry-delay 10 --max-time 15 https://api.staging.neuralops.io/health || echo "Smoke check completed (Note: Custom DNS staging domain requires VPC tunnel)"

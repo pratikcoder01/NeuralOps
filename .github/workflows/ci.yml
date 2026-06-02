@@ -6,10 +6,30 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  AWS_CONFIGURED: ${{ secrets.AWS_ACCESS_KEY_ID != '' && 'true' || 'false' }}
-
 jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Gate job: determines if AWS secrets are configured.
+  # Job-level `if:` only supports: github, needs, inputs, vars.
+  # Secrets must be surfaced via a step output and read via needs.
+  # ──────────────────────────────────────────────────────────────
+  check-aws:
+    name: Check AWS Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      has_aws: ${{ steps.detect.outputs.has_aws }}
+    steps:
+      - name: Detect AWS secrets
+        id: detect
+        run: |
+          if [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "has_aws=true" >> $GITHUB_OUTPUT
+            echo "AWS credentials detected — Docker image build will be enabled."
+          else
+            echo "has_aws=false" >> $GITHUB_OUTPUT
+            echo "::notice::AWS credentials not configured — Docker image build will be skipped."
+          fi
+
+  # ──────────────────────────────────────────────────────────────
   test-python:
     name: Test Python Services
     runs-on: ubuntu-latest
@@ -52,6 +72,7 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # ──────────────────────────────────────────────────────────────
   test-node:
     name: Test Node Alerting Service
     runs-on: ubuntu-latest
@@ -92,6 +113,7 @@ jobs:
           cd apps/alerting-service
           npm test
 
+  # ──────────────────────────────────────────────────────────────
   test-frontend:
     name: Test Frontend (Next.js)
     runs-on: ubuntu-latest
@@ -126,6 +148,7 @@ jobs:
             echo "No Playwright configuration found. Skipping E2E tests."
           fi
 
+  # ──────────────────────────────────────────────────────────────
   security-scan:
     name: Security Scans (SAST & Vulnerabilities)
     runs-on: ubuntu-latest
@@ -156,11 +179,16 @@ jobs:
           generateSarif: '1'
         continue-on-error: true
 
+  # ──────────────────────────────────────────────────────────────
+  # Only runs on main branch AND when AWS secrets are configured.
+  # Uses `needs.check-aws.outputs.has_aws` via the `needs` context
+  # which IS allowed in job-level if: conditions.
+  # ──────────────────────────────────────────────────────────────
   build-images:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    needs: [test-python, test-node, test-frontend, security-scan]
-    if: github.ref == 'refs/heads/main' && env.AWS_CONFIGURED == 'true'
+    needs: [check-aws, test-python, test-node, test-frontend, security-scan]
+    if: github.ref == 'refs/heads/main' && needs.check-aws.outputs.has_aws == 'true'
     strategy:
       matrix:
         service: [ingestion-service, alerting-service, remediation-service, ml-inference]
@@ -185,10 +213,9 @@ jobs:
           ECR_REPOSITORY: neuralops/${{ matrix.service }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Detect custom Dockerfile path if needed
           DOCKERFILE="Dockerfile"
           CONTEXT="apps/${{ matrix.service }}"
-          
+
           if [ "${{ matrix.service }}" = "ml-inference" ]; then
             DOCKERFILE="ml/anomaly_detection/serving/Dockerfile.inference"
             CONTEXT="."
@@ -197,7 +224,7 @@ jobs:
           elif [ "${{ matrix.service }}" = "alerting-service" ]; then
             CONTEXT="apps/alerting-service"
           fi
-          
+
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f $DOCKERFILE $CONTEXT
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest

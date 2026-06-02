@@ -8,26 +8,36 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
-env:
-  AWS_CONFIGURED: ${{ secrets.AWS_ACCESS_KEY_ID != '' && 'true' || 'false' }}
-
 jobs:
+  # Gate job: surfaces secrets via step output so deploy job
+  # can read it through the `needs` context (allowed in job if:).
+  check-aws:
+    name: Check AWS Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      has_aws: ${{ steps.detect.outputs.has_aws }}
+    steps:
+      - name: Detect AWS secrets
+        id: detect
+        run: |
+          if [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "has_aws=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_aws=false" >> $GITHUB_OUTPUT
+            echo "::notice::AWS credentials not configured — production deploy skipped."
+          fi
+
   deploy-prod:
     name: Production Blue-Green Deploy
     runs-on: ubuntu-latest
+    needs: [check-aws]
+    if: needs.check-aws.outputs.has_aws == 'true'
     environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Skip if AWS secrets not configured
-        if: env.AWS_CONFIGURED != 'true'
-        run: |
-          echo "::notice::AWS secrets not configured — skipping production deployment."
-          echo "To enable: add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY to repository secrets."
-
       - name: Configure AWS Credentials
-        if: env.AWS_CONFIGURED == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -35,23 +45,20 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
       - name: Update Kubeconfig for Production EKS
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           aws eks update-kubeconfig --name neuralops-prod-cluster --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
       - name: Install Helm and kubectl argo rollouts plugin
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           # Install Helm
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          
+
           # Install Argo Rollouts kubectl plugin
           curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
           chmod +x ./kubectl-argo-rollouts-linux-amd64
           sudo mv ./kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
 
       - name: Deploy Green Version (Helm Apply)
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           # Deploying with prod values and the current release tag
           # Argo Rollouts manages the transition from blue to green
@@ -65,7 +72,6 @@ jobs:
             --set mlInference.image.tag=${{ github.ref_name }}
 
       - name: Run Smoke Tests on Green Environment
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           echo "Verifying Green version health..."
           # Fetching internal Green service port / load balancer mapping
@@ -74,38 +80,36 @@ jobs:
           curl -f --retry 3 --retry-delay 5 http://$GREEN_SERVICE_URL/health || echo "Smoke test passed on preview endpoint"
 
       - name: Shift 10% Traffic to Green
-        if: env.AWS_CONFIGURED == 'true'
         run: |
           echo "Starting canary traffic shift (10%)..."
           # If using Argo Rollouts: it automatically pauses or shifts based on Rollout spec steps
           kubectl argo rollouts promote neuralops-ingestion -n neuralops-prod --skip-all-steps=false || echo "Rollout already promoted/running"
 
       - name: Wait & Monitor Error Rates (5 Minutes)
-        if: env.AWS_CONFIGURED == 'true'
         id: monitor
         run: |
           echo "Monitoring Prometheus telemetry for 5 minutes..."
           sleep 300
-          
+
           # Query Prometheus for error rates in the last 5 minutes
           # Target: Sum of 5xx errors divided by total requests. Alert if >= 0.1% (0.001)
           PROM_HOST=$(kubectl get svc -n monitoring -l app=prometheus -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' || echo "http://prometheus.monitoring.svc.cluster.local:9090")
-          
+
           QUERY="sum(rate(http_requests_total{status=~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
           RESPONSE=$(curl -G -s --data-urlencode "query=$QUERY" "$PROM_HOST/api/v1/query" || echo "failed")
-          
+
           if [ "$RESPONSE" = "failed" ]; then
             echo "Failed to connect to Prometheus. Defaulting to safe promotion."
             ERROR_RATE=0
           else
             ERROR_RATE=$(echo $RESPONSE | jq -r '.data.result[0].value[1]' || echo "0")
           fi
-          
+
           echo "Current system 5xx error rate: $ERROR_RATE"
-          
+
           # Check if error rate is greater than or equal to 0.1%
           IS_UNSTABLE=$(echo "$ERROR_RATE >= 0.001" | bc -l || echo "0")
-          
+
           if [ "$IS_UNSTABLE" -eq 1 ]; then
             echo "Unacceptable error rate detected: $ERROR_RATE. Triggering rollback!"
             exit 1
@@ -138,7 +142,7 @@ jobs:
           # Log back in and tag the verified image
           aws eks update-kubeconfig --name neuralops-prod-cluster --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
           LOGIN_REGISTRY=$(aws ecr get-login-password --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }})
-          
+
           for service in ingestion-service alerting-service remediation-service ml-inference; do
             IMAGE_MANIFEST=$(aws ecr batch-get-image --repository-name neuralops/$service --image-ids imageTag=${{ github.ref_name }} --output json | jq -r '.images[0].imageManifest')
             aws ecr put-image --repository-name neuralops/$service --image-tag production-latest --image-manifest "$IMAGE_MANIFEST"
