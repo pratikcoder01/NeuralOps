@@ -1,0 +1,9 @@
+id: runbook-03
+name: Restart Systemd Alerting Service
+trigger: memory_leak_detected
+action: restart_systemd_service
+description: Restarts memory-leaking alerting systemd services.
+steps:
+  - SSH to target host system
+  - Execute systemctl restart neuralops-alerting
+  - Verify process is active and memory consumption dropped

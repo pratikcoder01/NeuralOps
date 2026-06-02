@@ -1,0 +1,9 @@
+id: runbook-04
+name: Remediate High Packet Drop Rate
+trigger: high_packet_drops
+action: restart_network_interface
+description: Resets standard interface properties when high drops are observed.
+steps:
+  - Check active network configuration details
+  - Flush interface queues and reload driver configs
+  - Verify packet drops decrease below 0.1%

@@ -100,44 +100,203 @@ services:
         condition: service_healthy
     entrypoint: [ "bash", "-c", "kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic raw.metrics --partitions 1 --replication-factor 1 && kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic anomaly.events --partitions 1 --replication-factor 1 && kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic remediation.cmds --partitions 1 --replication-factor 1" ]
 
-  adminer:
-    image: adminer
-    container_name: neuralops-adminer
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5
+    container_name: neuralops-neo4j
+    ports:
+      - "7474:7474" # HTTP Console
+      - "7687:7687" # Bolt Protocol
+    environment:
+      - NEO4J_AUTH=none # Disable authentication for local development ease
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7474"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # MLflow Tracking Server
+  mlflow:
+    image: python:3.11-slim
+    container_name: neuralops-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    entrypoint: >
+      bash -c "pip install mlflow && 
+      mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:////mlflow/mlflow.db --default-artifact-root /mlflow/artifacts"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Apache Airflow Webserver
+  airflow-webserver:
+    image: apache/airflow:2.9.1
+    container_name: neuralops-airflow-webserver
+    ports:
+      - "8083:8080"
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://neuralops:neuralops@postgres:5432/neuralops
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "8080:8080"
+    volumes:
+      - airflow_data:/opt/airflow
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
 
-  mongo-express:
-    image: mongo-express
-    container_name: neuralops-mongo-express
+  # Apache Airflow Scheduler
+  airflow-scheduler:
+    image: apache/airflow:2.9.1
+    container_name: neuralops-airflow-scheduler
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://neuralops:neuralops@postgres:5432/neuralops
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
     depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - airflow_data:/opt/airflow
+    command: scheduler
+    restart: unless-stopped
+
+  # Custom Application Ingestion Service
+  ingestion-service:
+    build:
+      context: ./apps/ingestion-service
+      dockerfile: Dockerfile
+    container_name: neuralops-ingestion-service
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://neuralops:neuralops@postgres:5432/neuralops
+      - MONGO_URI=mongodb://mongo:27017/neuralops
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REMEDIATION_SERVICE_URL=http://remediation-service:8000/remediate
+    depends_on:
+      postgres:
+        condition: service_healthy
       mongo:
         condition: service_healthy
-    ports:
-      - "8081:8081"
-    environment:
-      ME_CONFIG_MONGODB_SERVER: mongo
-      ME_CONFIG_MONGODB_PORT: 27017
-      ME_CONFIG_BASICAUTH_USERNAME: admin
-      ME_CONFIG_BASICAUTH_PASSWORD: pass
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: neuralops-kafka-ui
+  # Custom Alerting Service
+  alerting-service:
+    build:
+      context: ./apps/alerting-service
+      dockerfile: Dockerfile
+    container_name: neuralops-alerting-service
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://neuralops:neuralops@postgres:5432/neuralops
+      - MONGO_URI=mongodb://mongo:27017/neuralops
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Custom Remediation Service
+  remediation-service:
+    build:
+      context: ./apps/remediation-service
+      dockerfile: Dockerfile
+    container_name: neuralops-remediation-service
+    ports:
+      - "8001:8000" # Mapped to host 8001 to prevent conflict with Ingestion Service (8000)
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ML Model Inference Server
+  ml-inference:
+    build:
+      context: .
+      dockerfile: ml/anomaly_detection/serving/Dockerfile.inference
+    container_name: neuralops-ml-inference
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - INFERENCE_API_URL=http://localhost:8080/predict
+      - REDIS_URL=redis://redis:6379/0
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
     depends_on:
       kafka:
         condition: service_healthy
+      ingestion-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # SRE Frontend Web Application
+  web-frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: neuralops-web-frontend
     ports:
-      - "8082:8082"
+      - "3000:3000"
     environment:
-      DYNAMIC_CONFIG_ENABLED: 'true'
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
-      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      - NEXT_PUBLIC_API_URL=http://ingestion-service:8000
+      - NEXT_PUBLIC_WS_URL=ws://alerting-service:4000/graphql
+    depends_on:
+      ingestion-service:
+        condition: service_healthy
+      alerting-service:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
@@ -146,3 +305,6 @@ volumes:
   redis_data:
   zookeeper_data:
   kafka_data:
+  neo4j_data:
+  mlflow_data:
+  airflow_data:

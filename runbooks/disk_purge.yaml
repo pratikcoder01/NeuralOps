@@ -1,0 +1,9 @@
+id: runbook-02
+name: Purge Docker Container Logs
+trigger: disk_space_exhaustion
+action: purge_docker_logs
+description: SSH into host and truncates active Docker container json logs to recover storage.
+steps:
+  - Identify largest json.log files under /var/lib/docker/containers/
+  - Safely truncate log files without restarting docker engine
+  - Verify free storage percentage is greater than 20%

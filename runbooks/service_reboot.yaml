@@ -1,0 +1,9 @@
+id: runbook-05
+name: Reboot Daemon Services
+trigger: service_crash
+action: restart_systemd_service
+description: Reboots general crashed backend services.
+steps:
+  - Check journalctl status log entries for crash details
+  - Invoke systemctl reboot on crashed service daemon unit
+  - Confirm success heartbeat returns in 30 seconds

@@ -7,6 +7,7 @@ from src.db.postgres import engine
 from src.db.mongo import mongo_manager, get_mongo_db
 from src.db.redis import redis_manager, get_redis_client
 from src.kafka.producer import kafka_producer
+from src.kafka.consumer import anomaly_consumer
 from src.middleware.logging import StructuredLoggingMiddleware
 from src.middleware.rate_limit import SlidingWindowRateLimiter
 
@@ -26,19 +27,25 @@ async def lifespan(app: FastAPI):
     # 3. Start aiokafka Producer Pool
     await kafka_producer.start()
     
+    # 4. Start anomaly events consumer
+    await anomaly_consumer.start()
+    
     yield
     
     logger.info("Shutting down NeuralOps Ingestion Service connection pools...")
-    # 1. Close Kafka
+    # 1. Stop anomaly events consumer
+    await anomaly_consumer.stop()
+    
+    # 2. Close Kafka
     await kafka_producer.stop()
     
-    # 2. Close Redis
+    # 3. Close Redis
     await redis_manager.close()
     
-    # 3. Close MongoDB
+    # 4. Close MongoDB
     mongo_manager.close()
     
-    # 4. Close Postgres Engine Pool
+    # 5. Close Postgres Engine Pool
     await engine.dispose()
     logger.info("Ingestion Service connection pools closed cleanly.")
 

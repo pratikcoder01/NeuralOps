@@ -1,0 +1,9 @@
+id: runbook-01
+name: Scale Kubernetes Pod Deployment
+trigger: high_cpu_utilization
+action: scale_out_deployment
+description: Escalates replica counts for a deployment under high CPU stress.
+steps:
+  - Check current replica count using kubectl
+  - Scale up deployment by +2 replicas
+  - Verify new pods transition to Running state
