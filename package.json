@@ -2,6 +2,7 @@
   "name": "neuralops-monorepo",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "npm@10.9.2",
   "description": "NeuralOps - AI-powered cloud infrastructure anomaly detection & automated remediation",
   "workspaces": [
     "apps/*"
