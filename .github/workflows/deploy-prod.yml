@@ -8,17 +8,26 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
+env:
+  AWS_CONFIGURED: ${{ secrets.AWS_ACCESS_KEY_ID != '' && 'true' || 'false' }}
+
 jobs:
   deploy-prod:
     name: Production Blue-Green Deploy
     runs-on: ubuntu-latest
-    if: secrets.AWS_ACCESS_KEY_ID != ''
     environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Skip if AWS secrets not configured
+        if: env.AWS_CONFIGURED != 'true'
+        run: |
+          echo "::notice::AWS secrets not configured — skipping production deployment."
+          echo "To enable: add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY to repository secrets."
+
       - name: Configure AWS Credentials
+        if: env.AWS_CONFIGURED == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -26,10 +35,12 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
       - name: Update Kubeconfig for Production EKS
+        if: env.AWS_CONFIGURED == 'true'
         run: |
           aws eks update-kubeconfig --name neuralops-prod-cluster --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
       - name: Install Helm and kubectl argo rollouts plugin
+        if: env.AWS_CONFIGURED == 'true'
         run: |
           # Install Helm
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -40,6 +51,7 @@ jobs:
           sudo mv ./kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
 
       - name: Deploy Green Version (Helm Apply)
+        if: env.AWS_CONFIGURED == 'true'
         run: |
           # Deploying with prod values and the current release tag
           # Argo Rollouts manages the transition from blue to green
@@ -53,6 +65,7 @@ jobs:
             --set mlInference.image.tag=${{ github.ref_name }}
 
       - name: Run Smoke Tests on Green Environment
+        if: env.AWS_CONFIGURED == 'true'
         run: |
           echo "Verifying Green version health..."
           # Fetching internal Green service port / load balancer mapping
@@ -61,12 +74,14 @@ jobs:
           curl -f --retry 3 --retry-delay 5 http://$GREEN_SERVICE_URL/health || echo "Smoke test passed on preview endpoint"
 
       - name: Shift 10% Traffic to Green
+        if: env.AWS_CONFIGURED == 'true'
         run: |
           echo "Starting canary traffic shift (10%)..."
           # If using Argo Rollouts: it automatically pauses or shifts based on Rollout spec steps
           kubectl argo rollouts promote neuralops-ingestion -n neuralops-prod --skip-all-steps=false || echo "Rollout already promoted/running"
 
       - name: Wait & Monitor Error Rates (5 Minutes)
+        if: env.AWS_CONFIGURED == 'true'
         id: monitor
         run: |
           echo "Monitoring Prometheus telemetry for 5 minutes..."
