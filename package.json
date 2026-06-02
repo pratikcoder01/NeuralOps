@@ -1,0 +1,19 @@
+{
+  "name": "neuralops-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NeuralOps - AI-powered cloud infrastructure anomaly detection & automated remediation",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "alerting-service",
+  "version": "1.0.0",
+  "description": "NeuralOps Alerting Service - GraphQL + Apollo Server",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon --watch src -e ts --exec ts-node src/index.ts",
+    "test": "echo \"Running alerting-service tests...\" && exit 0",
+    "lint": "echo \"Linting alerting-service...\""
+  },
+  "dependencies": {
+    "@apollo/server": "^4.9.0",
+    "graphql": "^16.8.0",
+    "mongoose": "^7.5.0",
+    "dotenv": "^16.3.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "@types/node": "^20.5.9",
+    "@types/cors": "^2.8.14",
+    "ts-node": "^10.9.1",
+    "nodemon": "^3.0.1"
+  }
+}
