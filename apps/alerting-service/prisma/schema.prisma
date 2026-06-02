@@ -1,0 +1,153 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Workspace {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(255)
+  slug      String   @unique @db.VarChar(255)
+  plan      String   @default("free") @db.VarChar(50)
+  hostLimit Int      @map("host_limit")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users                User[]
+  hosts                Host[]
+  incidents            Incident[]
+  remediationActions   RemediationAction[]
+  auditLogs            AuditLog[]
+  notificationChannels NotificationChannel[]
+
+  @@map("workspaces")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  workspaceId  String    @map("workspace_id") @db.Uuid
+  email        String    @unique @db.VarChar(255)
+  name         String    @db.VarChar(255)
+  role         String    @default("readonly") @db.VarChar(50)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  avatarUrl    String?   @map("avatar_url") @db.VarChar(512)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+
+  workspace            Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  remediationsApproved RemediationAction[] @relation("ApprovedByUser")
+  auditLogs            AuditLog[]
+
+  @@map("users")
+  @@index([workspaceId])
+}
+
+model Host {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  hostname      String   @db.VarChar(255)
+  ipAddress     String   @map("ip_address") @db.VarChar(50)
+  cloudProvider String   @map("cloud_provider") @default("on-premise") @db.VarChar(50)
+  region        String?  @db.VarChar(50)
+  tags          Json     @default("{}")
+  agentVersion  String   @map("agent_version") @default("1.0.0") @db.VarChar(50)
+  lastHeartbeat DateTime @default(now()) @map("last_heartbeat") @db.Timestamptz(6)
+  status        String   @default("healthy") @db.VarChar(50)
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  incidents Incident[]
+
+  @@map("hosts")
+  @@index([hostname])
+  @@index([workspaceId])
+}
+
+model Incident {
+  id             String    @id @default(uuid()) @db.Uuid
+  workspaceId    String    @map("workspace_id") @db.Uuid
+  hostId         String    @map("host_id") @db.Uuid
+  title          String    @db.VarChar(255)
+  severity       String    @default("WARNING") @db.VarChar(50)
+  status         String    @default("ACTIVE") @db.VarChar(50)
+  anomalyScore   Float     @map("anomaly_score") @default(0.0)
+  anomalyType    String?   @map("anomaly_type") @db.VarChar(100)
+  metricSnapshot Json      @map("metric_snapshot") @default("{}")
+  llmExplanation String?   @map("llm_explanation") @db.Text
+  rootCauseTags  String[]  @map("root_cause_tags")
+  detectedAt     DateTime  @default(now()) @map("detected_at") @db.Timestamptz(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+  ttdSeconds     Float?    @map("ttd_seconds")
+  ttrSeconds     Float?    @map("ttr_seconds")
+
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  host               Host                @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  remediationActions RemediationAction[]
+
+  @@map("incidents")
+  @@index([hostId])
+  @@index([workspaceId])
+}
+
+model RemediationAction {
+  id               String    @id @default(uuid()) @db.Uuid
+  incidentId       String    @map("incident_id") @db.Uuid
+  workspaceId      String    @map("workspace_id") @db.Uuid
+  runbookId        String?   @map("runbook_id") @db.Uuid
+  actionType       String    @map("action_type") @db.VarChar(100)
+  actionParams     Json      @map("action_params") @default("{}")
+  approvalRequired Boolean   @map("approval_required") @default(false)
+  approvedBy       String?   @map("approved_by") @db.Uuid
+  approvedAt       DateTime? @map("approved_at") @db.Timestamptz(6)
+  status           String    @default("PENDING") @db.VarChar(50)
+  resultLog        String?   @map("result_log") @db.Text
+  executedAt       DateTime? @map("executed_at") @db.Timestamptz(6)
+  durationSeconds  Float?    @map("duration_seconds")
+
+  incident       Incident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  approvedByUser User?     @relation("ApprovedByUser", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  // Map to reremediation_actions to match the actual PostgreSQL initial migration table name
+  @@map("reremediation_actions")
+  @@index([approvedBy])
+  @@index([incidentId])
+  @@index([workspaceId])
+}
+
+model AuditLog {
+  id          BigInt   @id @default(autoincrement())
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  action      String   @db.VarChar(100)
+  resource    String   @db.VarChar(100)
+  resourceId  String?  @map("resource_id") @db.VarChar(255)
+  payload     Json     @default("{}")
+  ipAddress   String?  @map("ip_address") @db.VarChar(50)
+  userAgent   String?  @map("user_agent") @db.VarChar(512)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_log")
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+model NotificationChannel {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  type        String   @db.VarChar(50) // slack, email, pagerduty
+  config      Json     @default("{}")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("notification_channels")
+  @@index([workspaceId])
+}

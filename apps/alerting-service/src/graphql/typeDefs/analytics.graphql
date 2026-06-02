@@ -1,0 +1,14 @@
+type Analytics {
+  totalIncidents: Int!
+  avgMttdSeconds: Float!
+  avgMttrSeconds: Float!
+  incidentsBySeverity: String!
+  incidentsByDay: String!
+  topHostsByIncidents: String!
+  resolvedToday: Int!
+  openCritical: Int!
+}
+
+extend type Query {
+  analyticsOverview(workspaceId: ID!, period: String!): Analytics!
+}

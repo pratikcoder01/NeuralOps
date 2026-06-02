@@ -1,0 +1,32 @@
+type Host {
+  id: ID!
+  workspaceId: ID!
+  hostname: String!
+  ipAddress: String!
+  cloudProvider: String!
+  region: String
+  tags: String!
+  agentVersion: String!
+  lastHeartbeat: String!
+  status: String!
+}
+
+type MetricsFrame {
+  hostId: ID!
+  timestamp: String!
+  cpuPercent: Float!
+  memUsedBytes: Float!
+  memTotalBytes: Float!
+  diskIoRead: Float!
+  diskIoWrite: Float!
+  netBytesRecv: Float!
+  netBytesSent: Float!
+}
+
+extend type Query {
+  hosts(workspaceId: ID!): [Host!]!
+}
+
+extend type Subscription {
+  metricsStream(hostId: ID!): MetricsFrame!
+}

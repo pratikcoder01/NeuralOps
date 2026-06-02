@@ -1,0 +1,87 @@
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  SUPPRESSED
+}
+
+enum ActionStatus {
+  PENDING
+  APPROVED
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+type RemediationAction {
+  id: ID!
+  incidentId: ID!
+  workspaceId: ID!
+  runbookId: ID
+  actionType: String!
+  actionParams: String!
+  approvalRequired: Boolean!
+  approvedBy: User
+  approvedAt: String
+  status: ActionStatus!
+  resultLog: String
+  executedAt: String
+  durationSeconds: Float
+}
+
+type Incident {
+  id: ID!
+  workspaceId: ID!
+  hostId: ID!
+  title: String!
+  severity: Severity!
+  status: IncidentStatus!
+  anomalyScore: Float!
+  anomalyType: String
+  metricSnapshot: String!
+  llmExplanation: String
+  rootCauseTags: [String!]!
+  detectedAt: String!
+  resolvedAt: String
+  ttdSeconds: Float
+  ttrSeconds: Float
+  host: Host!
+  remediationActions: [RemediationAction!]!
+}
+
+input IncidentFilter {
+  severity: Severity
+  status: IncidentStatus
+  hostId: ID
+  dateStart: String
+  dateEnd: String
+}
+
+type IncidentPage {
+  items: [Incident!]!
+  total: Int!
+  page: Int!
+  limit: Int!
+}
+
+extend type Query {
+  incidents(workspaceId: ID!, filter: IncidentFilter, page: Int, limit: Int): IncidentPage!
+  incident(id: ID!): Incident
+}
+
+extend type Mutation {
+  acknowledgeIncident(id: ID!): Incident!
+  resolveIncident(id: ID!): Incident!
+}
+
+extend type Subscription {
+  incidentCreated(workspaceId: ID!): Incident!
+  incidentUpdated(id: ID!): Incident!
+}

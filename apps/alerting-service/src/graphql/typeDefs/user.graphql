@@ -1,0 +1,18 @@
+type User {
+  id: ID!
+  workspaceId: ID!
+  email: String!
+  name: String!
+  role: String!
+  avatarUrl: String
+  createdAt: String!
+}
+
+type Workspace {
+  id: ID!
+  name: String!
+  slug: String!
+  plan: String!
+  hostLimit: Int!
+  createdAt: String!
+}

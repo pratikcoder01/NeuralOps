@@ -1,0 +1,25 @@
+type NotificationChannel {
+  id: ID!
+  workspaceId: ID!
+  type: String!
+  config: String!
+  isActive: Boolean!
+}
+
+input NotifChannelInput {
+  workspaceId: ID!
+  type: String!
+  config: String!
+  isActive: Boolean
+}
+
+extend type Query {
+  notificationChannels(workspaceId: ID!): [NotificationChannel!]!
+}
+
+extend type Mutation {
+  createNotificationChannel(input: NotifChannelInput!): NotificationChannel!
+  updateNotificationChannel(id: ID!, input: NotifChannelInput!): NotificationChannel!
+  deleteNotificationChannel(id: ID!): Boolean!
+  testNotificationChannel(id: ID!): Boolean!
+}
