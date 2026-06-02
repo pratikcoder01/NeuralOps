@@ -8,6 +8,7 @@ jobs:
   deploy:
     name: Deploy to Staging Cluster
     runs-on: ubuntu-latest
+    if: secrets.AWS_ACCESS_KEY_ID != ''
     environment: staging
     steps:
       - name: Checkout code

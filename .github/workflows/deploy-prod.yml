@@ -12,6 +12,7 @@ jobs:
   deploy-prod:
     name: Production Blue-Green Deploy
     runs-on: ubuntu-latest
+    if: secrets.AWS_ACCESS_KEY_ID != ''
     environment: production
     steps:
       - name: Checkout code
