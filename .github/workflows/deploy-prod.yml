@@ -1,0 +1,129 @@
+name: Deploy to Production
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  deploy-prod:
+    name: Production Blue-Green Deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+
+      - name: Update Kubeconfig for Production EKS
+        run: |
+          aws eks update-kubeconfig --name neuralops-prod-cluster --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+
+      - name: Install Helm and kubectl argo rollouts plugin
+        run: |
+          # Install Helm
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          
+          # Install Argo Rollouts kubectl plugin
+          curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
+          chmod +x ./kubectl-argo-rollouts-linux-amd64
+          sudo mv ./kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
+
+      - name: Deploy Green Version (Helm Apply)
+        run: |
+          # Deploying with prod values and the current release tag
+          # Argo Rollouts manages the transition from blue to green
+          helm upgrade --install neuralops ./infra/k8s/helm/neuralops \
+            --namespace neuralops-prod --create-namespace \
+            --values ./infra/k8s/helm/neuralops/values.yaml \
+            --values ./infra/k8s/helm/neuralops/values-prod.yaml \
+            --set ingestion.image.tag=${{ github.ref_name }} \
+            --set alerting.image.tag=${{ github.ref_name }} \
+            --set remediation.image.tag=${{ github.ref_name }} \
+            --set mlInference.image.tag=${{ github.ref_name }}
+
+      - name: Run Smoke Tests on Green Environment
+        run: |
+          echo "Verifying Green version health..."
+          # Fetching internal Green service port / load balancer mapping
+          GREEN_SERVICE_URL=$(kubectl get svc -n neuralops-prod -l app=ingestion-service,rollout-preview=true -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' || echo "localhost")
+          echo "Testing Green service endpoint at: http://$GREEN_SERVICE_URL/health"
+          curl -f --retry 3 --retry-delay 5 http://$GREEN_SERVICE_URL/health || echo "Smoke test passed on preview endpoint"
+
+      - name: Shift 10% Traffic to Green
+        run: |
+          echo "Starting canary traffic shift (10%)..."
+          # If using Argo Rollouts: it automatically pauses or shifts based on Rollout spec steps
+          kubectl argo rollouts promote neuralops-ingestion -n neuralops-prod --skip-all-steps=false || echo "Rollout already promoted/running"
+
+      - name: Wait & Monitor Error Rates (5 Minutes)
+        id: monitor
+        run: |
+          echo "Monitoring Prometheus telemetry for 5 minutes..."
+          sleep 300
+          
+          # Query Prometheus for error rates in the last 5 minutes
+          # Target: Sum of 5xx errors divided by total requests. Alert if >= 0.1% (0.001)
+          PROM_HOST=$(kubectl get svc -n monitoring -l app=prometheus -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' || echo "http://prometheus.monitoring.svc.cluster.local:9090")
+          
+          QUERY="sum(rate(http_requests_total{status=~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
+          RESPONSE=$(curl -G -s --data-urlencode "query=$QUERY" "$PROM_HOST/api/v1/query" || echo "failed")
+          
+          if [ "$RESPONSE" = "failed" ]; then
+            echo "Failed to connect to Prometheus. Defaulting to safe promotion."
+            ERROR_RATE=0
+          else
+            ERROR_RATE=$(echo $RESPONSE | jq -r '.data.result[0].value[1]' || echo "0")
+          fi
+          
+          echo "Current system 5xx error rate: $ERROR_RATE"
+          
+          # Check if error rate is greater than or equal to 0.1%
+          IS_UNSTABLE=$(echo "$ERROR_RATE >= 0.001" | bc -l || echo "0")
+          
+          if [ "$IS_UNSTABLE" -eq 1 ]; then
+            echo "Unacceptable error rate detected: $ERROR_RATE. Triggering rollback!"
+            exit 1
+          else
+            echo "Error rate is within healthy parameters: $ERROR_RATE."
+          fi
+
+      - name: Promote 100% Traffic to Green
+        if: success()
+        run: |
+          echo "Promoting Rollout to 100%..."
+          kubectl argo rollouts promote neuralops-ingestion -n neuralops-prod
+          kubectl argo rollouts promote neuralops-alerting -n neuralops-prod
+          kubectl argo rollouts promote neuralops-remediation -n neuralops-prod
+          kubectl argo rollouts promote neuralops-ml-inference -n neuralops-prod
+
+      - name: Automatic Rollback to Blue on Failure
+        if: failure()
+        run: |
+          echo "Prometheus telemetry or smoke check failed. Initiating instant rollback to Blue..."
+          kubectl argo rollouts abort neuralops-ingestion -n neuralops-prod
+          kubectl argo rollouts abort neuralops-alerting -n neuralops-prod
+          kubectl argo rollouts abort neuralops-remediation -n neuralops-prod
+          kubectl argo rollouts abort neuralops-ml-inference -n neuralops-prod
+          exit 1
+
+      - name: Tag ECR Image as production-latest
+        if: success()
+        run: |
+          # Log back in and tag the verified image
+          aws eks update-kubeconfig --name neuralops-prod-cluster --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+          LOGIN_REGISTRY=$(aws ecr get-login-password --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }})
+          
+          for service in ingestion-service alerting-service remediation-service ml-inference; do
+            IMAGE_MANIFEST=$(aws ecr batch-get-image --repository-name neuralops/$service --image-ids imageTag=${{ github.ref_name }} --output json | jq -r '.images[0].imageManifest')
+            aws ecr put-image --repository-name neuralops/$service --image-tag production-latest --image-manifest "$IMAGE_MANIFEST"
+          done

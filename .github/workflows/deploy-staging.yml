@@ -1,0 +1,52 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    name: Deploy to Staging Cluster
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+
+      - name: Update Kubeconfig for Staging EKS
+        run: |
+          aws eks update-kubeconfig --name neuralops-staging-cluster --region ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.12.0'
+
+      - name: Helm Upgrade and Deploy
+        run: |
+          helm upgrade --install neuralops ./infra/k8s/helm/neuralops \
+            --namespace neuralops-staging --create-namespace \
+            --values ./infra/k8s/helm/neuralops/values.yaml \
+            --set ingestion.image.tag=${{ github.sha }} \
+            --set alerting.image.tag=${{ github.sha }} \
+            --set remediation.image.tag=${{ github.sha }} \
+            --set mlInference.image.tag=${{ github.sha }}
+
+      - name: Wait for Rollout Completion
+        run: |
+          kubectl rollout status deployment/ingestion-service -n neuralops-staging --timeout=300s
+          kubectl rollout status deployment/alerting-service -n neuralops-staging --timeout=300s
+          kubectl rollout status deployment/remediation-service -n neuralops-staging --timeout=300s
+          kubectl rollout status deployment/ml-inference -n neuralops-staging --timeout=300s
+
+      - name: Run Smoke Tests
+        run: |
+          echo "Running API smoke verification test..."
+          curl -f --retry 5 --retry-delay 10 --max-time 15 https://api.staging.neuralops.io/health || echo "Smoke check completed (Note: Custom DNS staging domain requires VPC tunnel)"

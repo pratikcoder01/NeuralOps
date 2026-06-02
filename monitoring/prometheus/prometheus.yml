@@ -1,20 +1,75 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  scrape_timeout: 10s
+
+rule_files:
+  - "alert_rules.yml"
+  - "recording_rules.yml"
 
 scrape_configs:
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
 
-  - job_name: "ingestion-service"
+  - job_name: "neuralops-ingestion"
+    scrape_interval: 15s
+    metrics_path: /metrics
     static_configs:
-      - targets: ["ingestion-service:8000"]
+      - targets: ["ingestion-service.neuralops.svc.cluster.local:8000"]
 
-  - job_name: "alerting-service"
+  - job_name: "neuralops-alerting"
+    scrape_interval: 15s
+    metrics_path: /metrics
     static_configs:
-      - targets: ["alerting-service:4000"]
+      - targets: ["alerting-service.neuralops.svc.cluster.local:4000"]
 
-  - job_name: "remediation-service"
+  - job_name: "neuralops-remediation"
+    scrape_interval: 15s
+    metrics_path: /metrics
     static_configs:
-      - targets: ["remediation-service:8001"]
+      - targets: ["remediation-service.neuralops.svc.cluster.local:8000"]
+
+  - job_name: "neuralops-ml-inference"
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ml-inference.neuralops.svc.cluster.local:8080"]
+
+  # Kafka Exporter for consumer lag, topics and broker stats
+  - job_name: "kafka-exporter"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["kafka-exporter.monitoring.svc.cluster.local:9308"]
+
+  # PostgreSQL Exporter for pg_stat_activity, pg_stat_bgwriter
+  - job_name: "postgres-exporter"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["postgres-exporter.monitoring.svc.cluster.local:9187"]
+
+  # Kubernetes pods autodiscovery (ServiceMonitor style)
+  - job_name: "kubernetes-pods"
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name

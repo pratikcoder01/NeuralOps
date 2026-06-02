@@ -1,0 +1,102 @@
+name: Weekly ML Model Retraining
+
+on:
+  schedule:
+    - cron: '0 2 * * 0' # Sundays at 2:00 AM UTC
+  workflow_dispatch: # Enable manual triggering from UI
+
+jobs:
+  retrain:
+    name: Retrain Anomaly Detection Model
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Airflow DAG via REST API
+        id: trigger_dag
+        run: |
+          echo "Triggering Airflow DAG: 'neuralops_retraining'..."
+          
+          AIRFLOW_URL="${{ secrets.AIRFLOW_API_URL || 'https://airflow.prod.neuralops.io/api/v1' }}"
+          DAG_ID="neuralops_retraining"
+          
+          # Trigger DAG run and get the run id
+          RESPONSE=$(curl -s -X POST \
+            -u "${{ secrets.AIRFLOW_USERNAME }}:${{ secrets.AIRFLOW_PASSWORD }}" \
+            -H "Content-Type: application/json" \
+            -d '{"conf": {}}' \
+            "$AIRFLOW_URL/dags/$DAG_ID/dagRuns")
+          
+          DAG_RUN_ID=$(echo "$RESPONSE" | jq -r '.dag_run_id')
+          
+          if [ -z "$DAG_RUN_ID" ] || [ "$DAG_RUN_ID" = "null" ]; then
+            echo "Failed to trigger DAG. Response: $RESPONSE"
+            exit 1
+          fi
+          
+          echo "DAG triggered successfully. DAG Run ID: $DAG_RUN_ID"
+          echo "run_id=$DAG_RUN_ID" >> $GITHUB_OUTPUT
+
+      - name: Poll DAG Run Status (Timeout 4h)
+        run: |
+          AIRFLOW_URL="${{ secrets.AIRFLOW_API_URL || 'https://airflow.prod.neuralops.io/api/v1' }}"
+          DAG_ID="neuralops_retraining"
+          RUN_ID="${{ steps.trigger_dag.outputs.run_id }}"
+          
+          echo "Polling DAG Run status for Run ID: $RUN_ID..."
+          
+          TIMEOUT_SECONDS=14400 # 4 hours
+          ELAPSED=0
+          INTERVAL=60
+          
+          while [ $ELAPSED -lt $TIMEOUT_SECONDS ]; do
+            RESPONSE=$(curl -s -X GET \
+              -u "${{ secrets.AIRFLOW_USERNAME }}:${{ secrets.AIRFLOW_PASSWORD }}" \
+              "$AIRFLOW_URL/dags/$DAG_ID/dagRuns/$RUN_ID")
+            
+            STATUS=$(echo "$RESPONSE" | jq -r '.state')
+            
+            echo "Checking status at $(date): $STATUS"
+            
+            if [ "$STATUS" = "success" ]; then
+              echo "Airflow DAG run completed successfully!"
+              exit 0
+            elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "failed" ]; then
+              echo "Airflow DAG run failed! Response: $RESPONSE"
+              exit 1
+            fi
+            
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          echo "Timeout of 4 hours reached. Failing model retraining job!"
+          exit 1
+
+      - name: Send Slack Notification (Success)
+        if: success()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: '#36a64f'
+          SLACK_USERNAME: 'NeuralOps MLOps'
+          SLACK_TITLE: 'Weekly ML Model Retraining Successful'
+          SLACK_MESSAGE: |
+            The anomaly detection model retraining pipeline has completed successfully!
+            - **DAG ID**: neuralops_retraining
+            - **Run ID**: ${{ steps.trigger_dag.outputs.run_id }}
+            - **Environment**: Production
+            The model has been deployed to the registry and is serving traffic on `ml-inference`.
+
+      - name: Send Slack Notification (Failure)
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: '#ff0000'
+          SLACK_USERNAME: 'NeuralOps MLOps'
+          SLACK_TITLE: 'Weekly ML Model Retraining FAILED'
+          SLACK_MESSAGE: |
+            Attention MLOps Team: The anomaly detection model retraining pipeline has failed!
+            - **DAG ID**: neuralops_retraining
+            - **Run ID**: ${{ steps.trigger_dag.outputs.run_id }}
+            - **Status**: Failed/Timeout
+            Please inspect the Apache Airflow server logs immediately.
