@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remediation-service
+  labels:
+    app: remediation-service
+spec:
+  replicas: {{ .Values.remediation.replicaCount }}
+  selector:
+    matchLabels:
+      app: remediation-service
+  template:
+    metadata:
+      labels:
+        app: remediation-service
+    spec:
+      containers:
+        - name: remediation-service
+          image: "{{ .Values.remediation.image.repository }}:{{ .Values.remediation.image.tag }}"
+          imagePullPolicy: {{ .Values.remediation.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.remediation.resources | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: ingestion-config
+            - secretRef:
+                name: ingestion-secrets

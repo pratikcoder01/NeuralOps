@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingestion-config
+data:
+  DATABASE_URL: "postgresql://{{ .Values.global.postgres.username }}@{{ .Values.global.postgres.host }}:{{ .Values.global.postgres.port }}/{{ .Values.global.postgres.dbName }}?sslmode=disable"
+  MONGO_URI: "{{ .Values.global.mongo.uri }}"
+  REDIS_URL: "{{ .Values.global.redis.url }}"
+  KAFKA_BOOTSTRAP_SERVERS: "{{ .Values.global.kafka.bootstrapServers }}"

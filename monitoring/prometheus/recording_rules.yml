@@ -1,0 +1,26 @@
+groups:
+  - name: neuralops-recording-rules
+    rules:
+      # Pre-compute average HTTP request rates (5m window)
+      - record: job:http_requests_total:rate5m
+        expr: sum(rate(http_requests_total[5m])) by (job, service)
+
+      # Pre-compute 5xx error rates (5m window)
+      - record: job:http_requests_5xx:rate5m
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) by (job, service)
+
+      # Pre-compute 99th percentile API latencies
+      - record: job:http_request_duration_seconds:p99
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job, service))
+
+      # Pre-compute 95th percentile API latencies
+      - record: job:http_request_duration_seconds:p95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job, service))
+
+      # Pre-compute 50th percentile (median) API latencies
+      - record: job:http_request_duration_seconds:p50
+        expr: histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job, service))
+
+      # Pre-compute active pod counts per deployment
+      - record: job:kube_pod_status_ready:count
+        expr: sum(kube_pod_status_ready{condition="true"}) by (namespace, pod)

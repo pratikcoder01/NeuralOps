@@ -1,0 +1,81 @@
+groups:
+  - name: neuralops-platform-alerts
+    rules:
+      # API Latency Alerts
+      - alert: HighAPILatencyWarning
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API Latency on service {{ $labels.service }}"
+          description: "The 99th percentile API latency on service {{ $labels.service }} is {{ $value }}s, exceeding 500ms for more than 5 minutes."
+
+      - alert: HighAPILatencyCritical
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[2m])) by (le, service)) > 2.0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL API Latency on service {{ $labels.service }}"
+          description: "The 99th percentile API latency on service {{ $labels.service }} is {{ $value }}s, exceeding 2000ms for more than 2 minutes."
+
+      # Error Rate Alert
+      - alert: HighErrorRate
+        expr: (sum(rate(http_requests_total{status=~"5.."}[3m])) by (service) / sum(rate(http_requests_total[3m])) by (service)) * 100 > 1.0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.service }}"
+          description: "The 5xx HTTP response rate on service {{ $labels.service }} is {{ $value }}%, which exceeds the 1% SLA threshold for over 3 minutes."
+
+      # ML Inference Latency Alert
+      - alert: InferenceLatencyHigh
+        expr: histogram_quantile(0.99, sum(rate(ml_inference_duration_seconds_bucket[5m])) by (le)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High ML inference latency"
+          description: "The 99th percentile ML model inference latency is {{ $value }}s, which is greater than the 100ms warning threshold."
+
+      # Kafka Consumer Lag Alert
+      - alert: KafkaConsumerLag
+        expr: sum(kafka_consumergroup_lag) by (consumergroup, topic) > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High consumer group lag on topic {{ $labels.topic }}"
+          description: "The consumer group {{ $labels.consumergroup }} lag is {{ $value }} messages on topic {{ $labels.topic }}, exceeding 10000 threshold."
+
+      # Host and Storage Alert
+      - alert: DiskSpaceWarning
+        expr: 100 - (node_filesystem_avail_bytes{mountpoint="/", fstype!=""} / node_filesystem_size_bytes{mountpoint="/", fstype!=""} * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space utilization high on {{ $labels.instance }}"
+          description: "Disk usage on partition / is {{ $value }}%, exceeding the 80% warning limit."
+
+      # Kubernetes Pod CrashLoop Alert
+      - alert: PodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total[15m]) > 3
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container crashlooping on pod {{ $labels.pod }}"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} restarted {{ $value }} times within the last 15 minutes."
+
+      # Machine Learning Model Drift Alert
+      - alert: ModelDriftDetected
+        expr: model_psi_score > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ML Model feature drift detected"
+          description: "The Population Stability Index (PSI) is {{ $value }}, exceeding the 0.2 drift warning threshold (potential model decay)."

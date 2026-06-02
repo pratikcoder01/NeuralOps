@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alerting-service
+  labels:
+    app: alerting-service
+spec:
+  replicas: {{ .Values.alerting.replicaCount }}
+  selector:
+    matchLabels:
+      app: alerting-service
+  template:
+    metadata:
+      labels:
+        app: alerting-service
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - alerting-service
+                topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: alerting-service
+          image: "{{ .Values.alerting.image.repository }}:{{ .Values.alerting.image.tag }}"
+          imagePullPolicy: {{ .Values.alerting.image.pullPolicy }}
+          ports:
+            - containerPort: 4000
+          livenessProbe:
+            httpGet:
+              path: /graphql?query=%7B__schema%7Btypes%7Bname%7D%7D%7D
+              port: 4000
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /graphql?query=%7B__schema%7Btypes%7Bname%7D%7D%7D
+              port: 4000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.alerting.resources | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: ingestion-config
+            - secretRef:
+                name: ingestion-secrets

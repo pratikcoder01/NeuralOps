@@ -1,0 +1,192 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 3,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Business KPIs & Operational Metrics",
+      "type": "row"
+    },
+    {
+      "title": "Active Customer Workspaces",
+      "type": "stat",
+      "id": 2,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(neuralops_active_workspaces)",
+          "legendFormat": "Workspaces",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      }
+    },
+    {
+      "title": "Active Agent SDK Hosts",
+      "type": "stat",
+      "id": 3,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(neuralops_active_hosts)",
+          "legendFormat": "Monitored Hosts",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      }
+    },
+    {
+      "title": "Incidents Auto-Remediated vs Escalated",
+      "type": "piechart",
+      "id": 4,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(neuralops_incidents_remediated_total[24h]))",
+          "legendFormat": "Auto-Remediated",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(neuralops_incidents_escalated_total[24h]))",
+          "legendFormat": "Escalated to On-Call",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Incident Incidents Created Per Hour",
+      "type": "timeseries",
+      "id": 5,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(neuralops_incidents_created_total[1h]))",
+          "legendFormat": "New Incidents",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars"
+          }
+        }
+      }
+    },
+    {
+      "title": "MTTD & MTTR Trends (Mean Time to Detect / Resolve)",
+      "type": "timeseries",
+      "id": 6,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "targets": [
+        {
+          "expr": "neuralops_mttd_seconds / 60",
+          "legendFormat": "MTTD (minutes)",
+          "refId": "A"
+        },
+        {
+          "expr": "neuralops_mttr_seconds / 60",
+          "legendFormat": "MTTR (minutes)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "m"
+        }
+      }
+    },
+    {
+      "title": "Agent SDK Version Distribution",
+      "type": "bargauge",
+      "id": 7,
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "targets": [
+        {
+          "expr": "sum(neuralops_agent_info) by (version)",
+          "legendFormat": "Agent v{{version}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["neuralops", "business"],
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "NeuralOps Business KPIs",
+  "weekStart": ""
+}

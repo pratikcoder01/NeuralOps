@@ -1,0 +1,72 @@
+environment: staging
+domain: staging.neuralops.io
+
+global:
+  imagePullSecrets: []
+  postgres:
+    host: "localhost"
+    port: 5432
+    dbName: "neuralops"
+    username: "neuralops"
+  mongo:
+    uri: "mongodb://localhost:27017/neuralops"
+  redis:
+    url: "redis://localhost:6379/0"
+  kafka:
+    bootstrapServers: "localhost:9092"
+
+ingestion:
+  replicaCount: 2
+  image:
+    repository: "neuralops/ingestion-service"
+    tag: "latest"
+    pullPolicy: "IfNotPresent"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
+
+alerting:
+  replicaCount: 2
+  image:
+    repository: "neuralops/alerting-service"
+    tag: "latest"
+    pullPolicy: "IfNotPresent"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
+
+remediation:
+  replicaCount: 1
+  image:
+    repository: "neuralops/remediation-service"
+    tag: "latest"
+    pullPolicy: "IfNotPresent"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
+
+mlInference:
+  replicaCount: 1
+  image:
+    repository: "neuralops/ml-inference"
+    tag: "latest"
+    pullPolicy: "IfNotPresent"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
